@@ -16,6 +16,47 @@ env:
   BUILDKIT_PROGRESS: plain
 
 jobs:
+  prepare-python-venv:
+    name: Prepare Python venv
+    runs-on: ubuntu-22.04
+    outputs:
+      python-venv-cache-key: ${{ steps.python-venv-cache-key.outputs.key }}
+    steps:
+      # Create Python virtual env used for linters
+      - name: Check out code from GitHub
+        uses: actions/checkout@v3.5.2
+      - name: Set up Python ${{ env.DEFAULT_PYTHON }}
+        id: python
+        uses: actions/setup-python@v4.3.0
+        with:
+          python-version: ${{ env.DEFAULT_PYTHON }}
+      # Create a virtual environment and cache it
+      - name: Generate Python virtual environment restore key
+        id: python-venv-cache-key
+        env:
+          cache-name: cache-python-venv
+        run: >-
+          echo "key=${{ runner.os }}-${{ github.job }}-${{ env.cache-name }}-${{ env.CACHE_VERSION }}-${{ hashFiles('.pre-commit-config.yaml') }}-${{ hashFiles('requirements.txt') }}-${{ hashFiles('requirements_test.txt') }}-${{ hashFiles('requirements_ci.txt') }}" >> $GITHUB_OUTPUT
+      - name: Restore Python virtual environment
+        id: cache-venv
+        uses: actions/cache@v4
+        with:
+          path: venv
+          key: ${{ steps.python-venv-cache-key.outputs.key }}
+      - name: Create Python virtual environment
+        if: steps.cache-venv.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgirepository1.0-dev
+          python3 -m venv --system-site-packages venv
+      - name: Install requirements into Python virtual environment
+        if: steps.cache-venv.outputs.cache-hit != 'true'
+        uses: ./.github/templates/run_in_venv
+        with:
+          command: |
+            pip3 install -r requirements.txt -r requirements_test.txt -r requirements_ci.txt && \
+            pre-commit install
+
   run-pytest:
     name: Run pytest
     runs-on: ubuntu-22.04
